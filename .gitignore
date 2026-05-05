@@ -3,3 +3,7 @@ source-html/
 .venv/
 __pycache__/
 *.pyc
+.docker/
+tools/import.xml
+tools/tests/__pycache__/
+*.xml
