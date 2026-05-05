@@ -289,7 +289,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 MW_URL = "http://localhost:8080"
-ALL_PHASES = ["up", "import", "mirror", "post", "pagefind", "down"]
+# `init` runs MediaWiki install.php once per fresh DB to create schema.
+# An empty MariaDB has no MW tables; without init, every API call 500s.
+ALL_PHASES = ["up", "init", "import", "mirror", "post", "pagefind", "down"]
 
 
 def run(cmd: list[str], cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess:
@@ -297,9 +299,24 @@ def run(cmd: list[str], cwd: Path | None = None, check: bool = True) -> subproce
     return subprocess.run(cmd, cwd=cwd or REPO, check=check)
 
 
+def wait_for_db(timeout: int = 60) -> None:
+    """Block until MariaDB reports healthy (compose healthcheck)."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        r = subprocess.run(
+            ["docker", "compose", "ps", "--format", "json", "db"],
+            capture_output=True, text=True,
+        )
+        if '"Health":"healthy"' in r.stdout or '"healthy"' in r.stdout:
+            print("MariaDB healthy")
+            return
+        time.sleep(2)
+    raise SystemExit(f"MariaDB did not become healthy within {timeout}s")
+
+
 def wait_for_mediawiki(timeout: int = 120) -> None:
     deadline = time.time() + timeout
-    url = f"{MW_URL}/api.php?action=siteinfo&format=json"
+    url = f"{MW_URL}/api.php?action=query&meta=siteinfo&format=json"
     while time.time() < deadline:
         try:
             with urllib.request.urlopen(url, timeout=3) as r:
@@ -317,7 +334,11 @@ def wait_for_mediawiki(timeout: int = 120) -> None:
 
 def phase_up() -> None:
     run(["docker", "compose", "up", "-d"])
-    wait_for_mediawiki()
+    wait_for_db()
+
+
+def phase_init() -> None:
+    raise NotImplementedError("Task 4")
 
 
 def phase_import() -> None:
@@ -342,6 +363,7 @@ def phase_down() -> None:
 
 PHASES = {
     "up": phase_up,
+    "init": phase_init,
     "import": phase_import,
     "mirror": phase_mirror,
     "post": phase_post,
@@ -379,7 +401,7 @@ chmod +x ~/Documents/archives/tools/build.py
 cd ~/Documents/archives && python3 tools/build.py --only up
 ```
 
-Expected: Docker starts, then "MediaWiki ready: SimDemocracy Archives".
+Expected: Docker starts, then "MariaDB healthy". (MW HTTP isn't checked here because schema isn't yet present on a fresh DB — `init` phase in Task 4 runs install.php to create it. If `.docker/db/` already has tables from a previous build, MW will respond, but we don't assert that.)
 
 ```bash
 cd ~/Documents/archives && python3 tools/build.py --only down
@@ -397,12 +419,52 @@ cd ~/Documents/archives && git add tools/build.py && \
 
 ---
 
-## Task 4: Implement import phase
+## Task 4: Implement init + import phases
 
 **Files:**
 - Modify: `~/Documents/archives/tools/build.py`
 
-- [ ] **Step 1: Replace `phase_import` body**
+**Why init exists:** A fresh MariaDB has the `my_wiki` database but no MediaWiki tables. Without bootstrap, MW returns 500 on every request and `importDump` fails. `init` runs `install.php` once to create the schema. It's idempotent — if `site_stats` table already exists, it's a no-op.
+
+**Why a separate install container:** the running `mediawiki` service has our `LocalSettings.php` mounted read-only, and `install.php` refuses to run when it sees an existing `LocalSettings.php`. We sidestep this by running install in a fresh `mediawiki:1.43` container that joins the same Docker network, talks to the same DB, and writes its (unused) generated config to `/tmp/`.
+
+- [ ] **Step 1: Add `schema_present` and replace `phase_init` body**
+
+In `tools/build.py`, add `schema_present` near `wait_for_db` and replace the `phase_init` stub:
+
+```python
+def schema_present() -> bool:
+    r = subprocess.run(
+        ["docker", "compose", "exec", "-T", "db",
+         "mariadb", "-u", "wikiuser", "-pwikipass", "my_wiki",
+         "-N", "-B", "-e", "SHOW TABLES LIKE 'site_stats'"],
+        capture_output=True, text=True,
+    )
+    return r.returncode == 0 and "site_stats" in r.stdout
+
+
+def phase_init() -> None:
+    if schema_present():
+        print("MediaWiki schema already present, skipping install")
+        wait_for_mediawiki()
+        return
+    print("Bootstrapping MediaWiki schema (one-shot install container)")
+    run([
+        "docker", "run", "--rm", "--network=archives_default",
+        "mediawiki:1.43",
+        "php", "/var/www/html/maintenance/run.php", "install",
+        "--dbtype=mysql", "--dbserver=db", "--dbname=my_wiki",
+        "--dbuser=wikiuser", "--dbpass=wikipass",
+        "--installdbuser=wikiuser", "--installdbpass=wikipass",
+        "--pass=adminpass1234buildonly",
+        "--scriptpath=", "--server=http://localhost:8080",
+        "--confpath=/tmp", "--skins=Vector",
+        "SimDemocracy Archives", "Admin",
+    ])
+    wait_for_mediawiki()
+```
+
+- [ ] **Step 2: Replace `phase_import` body**
 
 In `tools/build.py`, replace the `phase_import` function with:
 
@@ -427,27 +489,30 @@ def verify_import() -> None:
         raise SystemExit(f"Expected >= 1300 pages, got {pages}. Import may have failed.")
 ```
 
-- [ ] **Step 2: Run import (with stack already up if you want, else full chain)**
+- [ ] **Step 3: Run init then import**
 
 ```bash
 cd ~/Documents/archives && \
   python3 tools/build.py --only up && \
+  python3 tools/build.py --only init && \
   python3 tools/build.py --only import
 ```
 
 Expected:
-- importDump output: "Done!" with progress reports per page
-- rebuildall output: "Refreshing redirects table" / "Rebuilding recentchanges" / "Refreshing links table"
-- "Page count after import: 1333" (or close — 1300+ is the assertion threshold)
+- init: "Bootstrapping MediaWiki schema..." → install.php prints "done" lines → "MediaWiki ready: SimDemocracy Archives"
+- (re-running init is a no-op: "MediaWiki schema already present, skipping install")
+- importDump: "Done!" with per-page progress
+- rebuildall: "Refreshing redirects table" / "Rebuilding recentchanges" / "Refreshing links table"
+- "Page count after import: 1333" (1300+ asserted)
 
-If it fails on `php maintenance/run.php importDump`, the older command form is `php maintenance/importDump.php`. MediaWiki 1.43 uses `run.php`; older fallback included for resilience. Try the older form if `run.php` errors.
+If it fails on `php maintenance/run.php importDump`, the older command form is `php maintenance/importDump.php`. MediaWiki 1.43 uses `run.php`; older fallback included for resilience.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 cd ~/Documents/archives && git add tools/build.py && \
   git -c user.email=wwambsganss@gmail.com -c user.name=mypenjustbroke \
-      commit -m "Implement import phase: importDump.php + rebuildall.php + verify"
+      commit -m "Implement init + import phases (schema bootstrap, importDump, rebuildall)"
 ```
 
 ---
