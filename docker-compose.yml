@@ -1,0 +1,28 @@
+services:
+  db:
+    image: mariadb:10.11
+    restart: "no"
+    environment:
+      MARIADB_DATABASE: my_wiki
+      MARIADB_USER: wikiuser
+      MARIADB_PASSWORD: wikipass
+      MARIADB_ROOT_PASSWORD: rootpass
+    volumes:
+      - ./.docker/db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      retries: 30
+
+  mediawiki:
+    image: mediawiki:1.43
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    volumes:
+      - ./LocalSettings.php:/var/www/html/LocalSettings.php:ro
+      - ./tools/import.xml:/import/SimDemocracy-Archives.xml:ro
+      - ./.docker/mw-images:/var/www/html/images
