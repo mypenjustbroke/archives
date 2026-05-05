@@ -127,3 +127,23 @@ def test_inject_site_notice_idempotent():
     postprocess.inject_site_notice(soup)
     postprocess.inject_site_notice(soup)
     assert len(soup.find_all(id="archives-notice")) == 1
+
+
+def test_swap_search_box_for_pagefind_replaces_native_form():
+    html = '''
+    <html><head></head><body>
+      <form action="/wiki/Special:Search" id="searchform">
+        <input id="searchInput" type="search" name="search">
+        <input type="submit" name="go" value="Go">
+      </form>
+    </body></html>
+    '''
+    soup = soup_from(html)
+    postprocess.swap_search_box_for_pagefind(soup)
+    assert soup.find(id="searchform") is None
+    assert soup.find(id="archives-search") is not None
+    head = soup.find("head")
+    css = head.find("link", href=lambda h: h and "/pagefind/pagefind-ui.css" in h)
+    js = head.find("script", src=lambda s: s and "/pagefind/pagefind-ui.js" in s)
+    assert css is not None
+    assert js is not None

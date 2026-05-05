@@ -67,5 +67,30 @@ def inject_site_notice(soup: BeautifulSoup) -> None:
     h1.insert_before(notice)
 
 
+PAGEFIND_PLACEHOLDER_HTML = (
+    '<div id="archives-search" style="margin:6px 0;"></div>'
+)
+PAGEFIND_INIT_SCRIPT = (
+    '<script>'
+    'window.addEventListener("DOMContentLoaded",function(){'
+    'new PagefindUI({element:"#archives-search",showSubResults:true});'
+    '});'
+    '</script>'
+)
+
+
 def swap_search_box_for_pagefind(soup: BeautifulSoup) -> None:
-    raise NotImplementedError("Task 11")
+    form = soup.find(id="searchform")
+    if form is not None:
+        placeholder = BeautifulSoup(PAGEFIND_PLACEHOLDER_HTML, "lxml").find(id="archives-search")
+        form.replace_with(placeholder)
+    head = soup.find("head")
+    if head is not None:
+        if not head.find("link", href=lambda h: h and "/pagefind/pagefind-ui.css" in h):
+            link = soup.new_tag("link", rel="stylesheet", href="/pagefind/pagefind-ui.css")
+            head.append(link)
+        if not head.find("script", src=lambda s: s and "/pagefind/pagefind-ui.js" in s):
+            script = soup.new_tag("script", src="/pagefind/pagefind-ui.js")
+            head.append(script)
+            init = BeautifulSoup(PAGEFIND_INIT_SCRIPT, "lxml").find("script")
+            head.append(init)
