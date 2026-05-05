@@ -97,3 +97,33 @@ def test_strip_special_recentchanges_link_removes_sidebar_entry():
     assert soup.find(id="n-help-mediawiki") is None
     assert soup.find(id="n-mainpage-description") is not None
     assert soup.find(id="n-randompage") is None
+
+
+def test_inject_site_notice_adds_banner_at_top_of_content():
+    html = '''
+    <html><body>
+      <div id="content" class="mw-body" role="main">
+        <h1 id="firstHeading">Foo</h1>
+        <div id="bodyContent">...</div>
+      </div>
+    </body></html>
+    '''
+    soup = soup_from(html)
+    postprocess.inject_site_notice(soup)
+    notice = soup.find(id="archives-notice")
+    assert notice is not None, "site notice div not injected"
+    assert "snapshot" in notice.get_text().lower()
+    h1 = soup.find(id="firstHeading")
+    siblings_before_h1 = []
+    for sib in h1.previous_siblings:
+        if hasattr(sib, "get") and sib.get("id"):
+            siblings_before_h1.append(sib.get("id"))
+    assert "archives-notice" in siblings_before_h1
+
+
+def test_inject_site_notice_idempotent():
+    html = '<div id="content"><h1 id="firstHeading">X</h1></div>'
+    soup = soup_from(html)
+    postprocess.inject_site_notice(soup)
+    postprocess.inject_site_notice(soup)
+    assert len(soup.find_all(id="archives-notice")) == 1

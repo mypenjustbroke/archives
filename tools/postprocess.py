@@ -46,8 +46,25 @@ def strip_special_recentchanges_link(soup: BeautifulSoup) -> None:
             el.decompose()
 
 
+SITE_NOTICE_HTML = (
+    '<div id="archives-notice" '
+    'style="background:#fff8dc;border:1px solid #d4c876;'
+    'padding:8px 12px;margin:0 0 12px 0;font-size:90%;border-radius:3px;">'
+    'Frozen snapshot of the SimDemocracy Archives, captured 2026-05-05. '
+    'Read-only mirror; no edit, no live updates. '
+    '<a href="https://mypenjustbroke.com">mypenjustbroke.com</a>'
+    '</div>'
+)
+
+
 def inject_site_notice(soup: BeautifulSoup) -> None:
-    raise NotImplementedError("Task 10")
+    if soup.find(id="archives-notice"):
+        return
+    h1 = soup.find(id="firstHeading")
+    if h1 is None:
+        return
+    notice = BeautifulSoup(SITE_NOTICE_HTML, "lxml").find(id="archives-notice")
+    h1.insert_before(notice)
 
 
 def swap_search_box_for_pagefind(soup: BeautifulSoup) -> None:
