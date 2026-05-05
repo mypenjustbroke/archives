@@ -16,7 +16,11 @@ def transform(html: str) -> str:
 
 
 def strip_edit_links(soup: BeautifulSoup) -> None:
-    raise NotImplementedError("Task 7")
+    for li_id in ("ca-edit", "ca-ve-edit"):
+        for el in soup.find_all(id=li_id):
+            el.decompose()
+    for el in soup.find_all(class_="mw-editsection"):
+        el.decompose()
 
 
 def strip_history_and_action_tabs(soup: BeautifulSoup) -> None:
