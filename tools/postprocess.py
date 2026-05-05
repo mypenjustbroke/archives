@@ -24,7 +24,10 @@ def strip_edit_links(soup: BeautifulSoup) -> None:
 
 
 def strip_history_and_action_tabs(soup: BeautifulSoup) -> None:
-    raise NotImplementedError("Task 8")
+    for li_id in ("ca-history", "ca-watch", "ca-unwatch", "ca-move",
+                  "ca-delete", "ca-protect", "ca-purge"):
+        for el in soup.find_all(id=li_id):
+            el.decompose()
 
 
 def strip_login_and_account_links(soup: BeautifulSoup) -> None:

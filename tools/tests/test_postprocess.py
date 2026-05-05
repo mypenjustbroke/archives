@@ -40,3 +40,26 @@ def test_strip_edit_links_removes_section_edit_brackets():
     postprocess.strip_edit_links(soup)
     assert soup.find(class_="mw-editsection") is None
     assert soup.find(class_="mw-headline") is not None
+
+
+def test_strip_history_and_action_tabs_removes_known_ids():
+    html = '''
+    <ul>
+      <li id="ca-history"><a>History</a></li>
+      <li id="ca-watch"><a>Watch</a></li>
+      <li id="ca-unwatch"><a>Unwatch</a></li>
+      <li id="ca-move"><a>Move</a></li>
+      <li id="ca-delete"><a>Delete</a></li>
+      <li id="ca-protect"><a>Protect</a></li>
+      <li id="ca-purge"><a>Purge</a></li>
+      <li id="ca-view"><a>Read</a></li>
+      <li id="ca-talk"><a>Talk</a></li>
+    </ul>
+    '''
+    soup = soup_from(html)
+    postprocess.strip_history_and_action_tabs(soup)
+    for stripped in ("ca-history", "ca-watch", "ca-unwatch", "ca-move",
+                     "ca-delete", "ca-protect", "ca-purge"):
+        assert soup.find(id=stripped) is None, f"{stripped} should be removed"
+    assert soup.find(id="ca-view") is not None
+    assert soup.find(id="ca-talk") is not None
