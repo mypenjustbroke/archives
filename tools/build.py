@@ -217,7 +217,34 @@ def phase_mirror() -> None:
 
 
 def phase_post() -> None:
-    raise NotImplementedError("Task 7-12")
+    sys.path.insert(0, str(REPO / "tools"))
+    import postprocess  # noqa
+    wiki_dir = REPO / "wiki"
+    if not wiki_dir.exists():
+        raise SystemExit("wiki/ does not exist; run mirror phase first")
+    count = 0
+    for f in wiki_dir.rglob("*.html"):
+        html = f.read_text(encoding="utf-8")
+        new = postprocess.transform(html)
+        if new != html:
+            f.write_text(new, encoding="utf-8")
+            count += 1
+    print(f"Postprocessed {count} files")
+
+    index = REPO / "index.html"
+    index.write_text(
+        '<!DOCTYPE html>\n'
+        '<html><head>'
+        '<meta charset="utf-8">'
+        '<meta http-equiv="refresh" content="0;url=/wiki/Main_Page">'
+        '<link rel="canonical" href="/wiki/Main_Page">'
+        '<title>SimDemocracy Archives</title>'
+        '</head><body>'
+        '<p>Redirecting to <a href="/wiki/Main_Page">Main Page</a>...</p>'
+        '</body></html>\n',
+        encoding="utf-8",
+    )
+    print(f"Wrote {index}")
 
 
 def phase_pagefind() -> None:
