@@ -139,8 +139,81 @@ def verify_import() -> None:
         raise SystemExit(f"Expected >= 1300 pages, got {pages}. Import may have failed.")
 
 
+def enumerate_titles_via_api() -> list[str]:
+    """List every page title across content namespaces using MediaWiki's API."""
+    titles: list[str] = []
+    for ns in [0, 4, 6, 10, 14]:  # Main, Project, File, Template, Category
+        cont = ""
+        while True:
+            url = (f"{MW_URL}/api.php?action=query&list=allpages&aplimit=500"
+                   f"&apnamespace={ns}&format=json{cont}")
+            with urllib.request.urlopen(url, timeout=10) as r:
+                data = json.loads(r.read())
+            for p in data.get("query", {}).get("allpages", []):
+                titles.append(p["title"])
+            if "continue" in data:
+                apcontinue = data["continue"].get("apcontinue", "")
+                cont = f"&apcontinue={urllib.parse.quote(apcontinue)}"
+            else:
+                break
+    return titles
+
+
 def phase_mirror() -> None:
-    raise NotImplementedError("Task 5")
+    site = REPO / "site_tmp"
+    if site.exists():
+        shutil.rmtree(site)
+    site.mkdir()
+
+    # Initial recursive mirror from Main_Page; --convert-links makes refs relative.
+    run([
+        "wget", "--mirror", "--page-requisites", "--convert-links",
+        "--adjust-extension", "--no-parent", "--no-host-directories",
+        "--execute", "robots=off",
+        "--directory-prefix", str(site),
+        f"{MW_URL}/wiki/Main_Page",
+    ])
+
+    # Coverage pass: enumerate every title via API and explicitly fetch any not
+    # caught by the recursive crawl (orphans, less-linked categories, templates).
+    titles = enumerate_titles_via_api()
+    print(f"API enumerated {len(titles)} titles")
+    urls_file = site / "_urls.txt"
+    with urls_file.open("w") as f:
+        for t in titles:
+            f.write(f"{MW_URL}/wiki/{urllib.parse.quote(t.replace(' ', '_'))}\n")
+    run([
+        "wget", "--input-file", str(urls_file),
+        "--page-requisites", "--convert-links",
+        "--adjust-extension", "--no-host-directories",
+        "--execute", "robots=off",
+        "-N",  # only download if newer (skip the ones we already have)
+        "--directory-prefix", str(site),
+    ])
+    urls_file.unlink()
+
+    # Replace the existing mirror in repo root (preserve docs/, tools/, etc).
+    for d in ("wiki", "load.php", "resources", "skins"):
+        target = REPO / d
+        src = site / d
+        if target.exists():
+            if target.is_dir():
+                shutil.rmtree(target)
+            else:
+                target.unlink()
+        if src.exists():
+            shutil.move(str(src), str(target))
+    # Move any top-level files (e.g. index.html from the crawl)
+    for f in site.iterdir():
+        if f.is_file():
+            shutil.move(str(f), str(REPO / f.name))
+    shutil.rmtree(site)
+
+    # Coverage check
+    page_count = sum(1 for _ in (REPO / "wiki").rglob("*.html"))
+    print(f"Mirrored HTML files in /wiki: {page_count}")
+    if page_count < 1300:
+        raise SystemExit(f"Mirror coverage too low: {page_count} pages")
 
 
 def phase_post() -> None:
