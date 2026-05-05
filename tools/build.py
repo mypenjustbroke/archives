@@ -248,7 +248,13 @@ def phase_post() -> None:
 
 
 def phase_pagefind() -> None:
-    raise NotImplementedError("Task 13")
+    pagefind_dir = REPO / "pagefind"
+    if pagefind_dir.exists():
+        shutil.rmtree(pagefind_dir)
+    run(["pagefind", "--site", str(REPO), "--output-path", str(pagefind_dir)])
+    if not (pagefind_dir / "pagefind.js").exists() and not (pagefind_dir / "pagefind-ui.js").exists():
+        raise SystemExit("Pagefind output missing expected files")
+    print(f"Pagefind index built at {pagefind_dir}")
 
 
 def phase_down() -> None:
