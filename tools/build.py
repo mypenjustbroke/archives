@@ -73,17 +73,70 @@ def wait_for_mediawiki(timeout: int = 120) -> None:
     raise SystemExit(f"MediaWiki did not become ready within {timeout}s")
 
 
+def schema_present() -> bool:
+    r = subprocess.run(
+        ["docker", "compose", "exec", "-T", "db",
+         "mariadb", "-u", "wikiuser", "-pwikipass", "my_wiki",
+         "-N", "-B", "-e", "SHOW TABLES LIKE 'site_stats'"],
+        capture_output=True, text=True, cwd=REPO,
+    )
+    return r.returncode == 0 and "site_stats" in r.stdout
+
+
 def phase_up() -> None:
     run(["docker", "compose", "up", "-d"])
     wait_for_db()
 
 
 def phase_init() -> None:
-    raise NotImplementedError("Task 4")
+    if schema_present():
+        print("MediaWiki schema already present, skipping install")
+        wait_for_mediawiki()
+        return
+    print("Bootstrapping MediaWiki schema (one-shot install container)")
+    run([
+        "docker", "run", "--rm", "--network=archives_default",
+        "mediawiki:1.43",
+        "php", "/var/www/html/maintenance/run.php", "install",
+        "--dbtype=mysql", "--dbserver=db", "--dbname=my_wiki",
+        "--dbuser=wikiuser", "--dbpass=wikipass",
+        "--installdbuser=wikiuser", "--installdbpass=wikipass",
+        "--pass=adminpass1234buildonly",
+        "--scriptpath=", "--server=http://localhost:8080",
+        "--confpath=/tmp", "--skins=Vector",
+        "SimDemocracy Archives", "Admin",
+    ])
+    wait_for_mediawiki()
 
 
 def phase_import() -> None:
-    raise NotImplementedError("Task 4")
+    # importDump.php reads from STDIN inside the container.
+    run(["docker", "compose", "exec", "-T", "mediawiki",
+         "bash", "-c",
+         "php maintenance/run.php importDump --no-updates < /import/SimDemocracy-Archives.xml"])
+    run(["docker", "compose", "exec", "mediawiki",
+         "php", "maintenance/run.php", "rebuildall"])
+    # rebuildall refreshes links but not site statistics; do that explicitly
+    # so siteinfo and Special:Statistics show real counts.
+    run(["docker", "compose", "exec", "mediawiki",
+         "php", "maintenance/run.php", "initSiteStats", "--update"])
+    verify_import()
+
+
+def verify_import() -> None:
+    # Source of truth: count rows in the page table directly. The MediaWiki
+    # statistics counter only reflects pages with content links and lags
+    # bulk imports; the raw page count is what we actually mirrored.
+    r = subprocess.run(
+        ["docker", "compose", "exec", "-T", "db",
+         "mariadb", "-u", "wikiuser", "-pwikipass", "my_wiki",
+         "-N", "-B", "-e", "SELECT COUNT(*) FROM page"],
+        capture_output=True, text=True, cwd=REPO, check=True,
+    )
+    pages = int(r.stdout.strip())
+    print(f"Page count after import: {pages}")
+    if pages < 1300:
+        raise SystemExit(f"Expected >= 1300 pages, got {pages}. Import may have failed.")
 
 
 def phase_mirror() -> None:

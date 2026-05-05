@@ -476,14 +476,24 @@ def phase_import() -> None:
          "php maintenance/run.php importDump --no-updates < /import/SimDemocracy-Archives.xml"])
     run(["docker", "compose", "exec", "mediawiki",
          "php", "maintenance/run.php", "rebuildall"])
+    # rebuildall refreshes links but not site statistics; do that explicitly
+    # so siteinfo and Special:Statistics show real counts.
+    run(["docker", "compose", "exec", "mediawiki",
+         "php", "maintenance/run.php", "initSiteStats", "--update"])
     verify_import()
 
 
 def verify_import() -> None:
-    url = f"{MW_URL}/api.php?action=query&meta=siteinfo&siprop=statistics&format=json"
-    with urllib.request.urlopen(url, timeout=10) as r:
-        data = json.loads(r.read())
-    pages = data.get("query", {}).get("statistics", {}).get("pages", 0)
+    # Source of truth: count rows in the page table directly. The MediaWiki
+    # statistics counter only reflects pages with content links and lags
+    # bulk imports; the raw page count is what we actually mirrored.
+    r = subprocess.run(
+        ["docker", "compose", "exec", "-T", "db",
+         "mariadb", "-u", "wikiuser", "-pwikipass", "my_wiki",
+         "-N", "-B", "-e", "SELECT COUNT(*) FROM page"],
+        capture_output=True, text=True, cwd=REPO, check=True,
+    )
+    pages = int(r.stdout.strip())
     print(f"Page count after import: {pages}")
     if pages < 1300:
         raise SystemExit(f"Expected >= 1300 pages, got {pages}. Import may have failed.")
