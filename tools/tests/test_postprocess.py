@@ -63,3 +63,37 @@ def test_strip_history_and_action_tabs_removes_known_ids():
         assert soup.find(id=stripped) is None, f"{stripped} should be removed"
     assert soup.find(id="ca-view") is not None
     assert soup.find(id="ca-talk") is not None
+
+
+def test_strip_login_and_account_links_removes_personal_tools():
+    html = '''
+    <ul id="p-personal-tools">
+      <li id="pt-anonuserpage">Not logged in</li>
+      <li id="pt-anontalk"><a>Talk for this IP</a></li>
+      <li id="pt-anoncontribs"><a>Contributions</a></li>
+      <li id="pt-createaccount"><a>Create account</a></li>
+      <li id="pt-login"><a>Log in</a></li>
+    </ul>
+    '''
+    soup = soup_from(html)
+    postprocess.strip_login_and_account_links(soup)
+    for stripped in ("pt-anonuserpage", "pt-anontalk", "pt-anoncontribs",
+                     "pt-createaccount", "pt-login"):
+        assert soup.find(id=stripped) is None, f"{stripped} should be removed"
+
+
+def test_strip_special_recentchanges_link_removes_sidebar_entry():
+    html = '''
+    <ul>
+      <li id="n-mainpage-description"><a href="/wiki/Main_Page">Main page</a></li>
+      <li id="n-recentchanges"><a href="/wiki/Special:RecentChanges">Recent changes</a></li>
+      <li id="n-randompage"><a href="/wiki/Special:Random">Random</a></li>
+      <li id="n-help-mediawiki"><a href="https://www.mediawiki.org/">Help</a></li>
+    </ul>
+    '''
+    soup = soup_from(html)
+    postprocess.strip_special_recentchanges_link(soup)
+    assert soup.find(id="n-recentchanges") is None
+    assert soup.find(id="n-help-mediawiki") is None
+    assert soup.find(id="n-mainpage-description") is not None
+    assert soup.find(id="n-randompage") is None

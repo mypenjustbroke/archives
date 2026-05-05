@@ -31,11 +31,19 @@ def strip_history_and_action_tabs(soup: BeautifulSoup) -> None:
 
 
 def strip_login_and_account_links(soup: BeautifulSoup) -> None:
-    raise NotImplementedError("Task 9")
+    for li_id in ("pt-anonuserpage", "pt-anontalk", "pt-anoncontribs",
+                  "pt-createaccount", "pt-login", "pt-userpage", "pt-mytalk",
+                  "pt-preferences", "pt-watchlist", "pt-mycontris",
+                  "pt-logout"):
+        for el in soup.find_all(id=li_id):
+            el.decompose()
 
 
 def strip_special_recentchanges_link(soup: BeautifulSoup) -> None:
-    raise NotImplementedError("Task 9")
+    for li_id in ("n-recentchanges", "n-help-mediawiki", "n-randompage",
+                  "n-portal", "n-currentevents"):
+        for el in soup.find_all(id=li_id):
+            el.decompose()
 
 
 def inject_site_notice(soup: BeautifulSoup) -> None:
