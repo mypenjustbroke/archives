@@ -10,9 +10,45 @@ def transform(html: str) -> str:
     strip_history_and_action_tabs(soup)
     strip_login_and_account_links(soup)
     strip_special_recentchanges_link(soup)
+    strip_printfooter(soup)
+    neutralize_localhost_links(soup)
     inject_site_notice(soup)
     swap_search_box_for_pagefind(soup)
     return str(soup)
+
+
+def strip_printfooter(soup: BeautifulSoup) -> None:
+    """Remove the 'Retrieved from "<url>"' attribution that MediaWiki
+    emits at the bottom of every page. The URL is the localhost build
+    server (e.g. http://localhost:8080/index.php?...), which is meaningless
+    and ugly on a static archive."""
+    for el in soup.find_all(class_="printfooter"):
+        el.decompose()
+
+
+def neutralize_localhost_links(soup: BeautifulSoup) -> None:
+    """Strip http://localhost:8080 prefix from /wiki/... refs (real content
+    we mirrored), and remove href/action attributes entirely from anything
+    else pointing at localhost (dynamic endpoints — edit, api, rest, oldid,
+    Special:WhatLinksHere — which don't exist on the static mirror).
+    Also delete <link> tags in <head> whose href points at localhost
+    (atom feeds, OpenSearch description, RSD — all dynamic endpoints
+    not available on a static archive)."""
+    LOCAL = "http://localhost:8080"
+    for tag in soup.find_all(["a", "form"]):
+        for attr in ("href", "action"):
+            url = tag.get(attr)
+            if not url or not url.startswith(LOCAL):
+                continue
+            path = url[len(LOCAL):]
+            if path.startswith("/wiki/"):
+                tag[attr] = path
+            else:
+                del tag[attr]
+    for link in soup.find_all("link"):
+        href = link.get("href", "")
+        if href.startswith(LOCAL):
+            link.decompose()
 
 
 def strip_edit_links(soup: BeautifulSoup) -> None:

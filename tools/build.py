@@ -116,6 +116,21 @@ def phase_init() -> None:
          "php", "maintenance/run.php", "nukePage", "Main_Page", "--delete"])
 
 
+SIDEBAR_WIKITEXT = """\
+* Browse
+** mainpage|mainpage-description
+** Constitution|Constitution
+** Category:Legislation|Legislation
+** Category:Executive_Orders|Executive Orders
+** Category:Minecraft_Law|Minecraft Law
+** Category:Case_Law|Case Law
+** Category:History|Historical material
+** New_User_Guide|New User Guide
+* SEARCH
+* TOOLBOX
+"""
+
+
 def phase_import() -> None:
     # importDump.php reads from STDIN inside the container.
     run(["docker", "compose", "exec", "-T", "mediawiki",
@@ -127,7 +142,22 @@ def phase_import() -> None:
     # so siteinfo and Special:Statistics show real counts.
     run(["docker", "compose", "exec", "mediawiki",
          "php", "maintenance/run.php", "initSiteStats", "--update"])
+    install_custom_sidebar()
     verify_import()
+
+
+def install_custom_sidebar() -> None:
+    """Overwrite MediaWiki:Sidebar so Vector renders our custom Browse
+    section instead of the default navigation/recentchanges/random links."""
+    print("Installing custom MediaWiki:Sidebar")
+    subprocess.run(
+        ["docker", "compose", "exec", "-T", "mediawiki",
+         "php", "maintenance/run.php", "edit",
+         "--user", "Admin", "--no-rc",
+         "--summary", "Custom archive sidebar",
+         "MediaWiki:Sidebar"],
+        input=SIDEBAR_WIKITEXT, text=True, cwd=REPO, check=True,
+    )
 
 
 def verify_import() -> None:
@@ -224,8 +254,21 @@ def phase_mirror() -> None:
             shutil.move(str(f), str(REPO / f.name))
     shutil.rmtree(site)
 
+    # Drop MediaWiki Special: pages (interface artifacts: AllPages,
+    # WhatLinksHere, RecentChanges, Export, etc). They're not real content
+    # and they're the only remaining source of localhost URL leaks (e.g.
+    # Special:Export embeds the build-time host as <base>). Real titles
+    # like 'Special_Channels_Act' use underscore, not colon, so they survive.
+    wiki = REPO / "wiki"
+    for entry in list(wiki.iterdir()):
+        if entry.name.startswith("Special:"):
+            if entry.is_dir():
+                shutil.rmtree(entry)
+            else:
+                entry.unlink()
+
     # Coverage check
-    page_count = sum(1 for _ in (REPO / "wiki").rglob("*.html"))
+    page_count = sum(1 for _ in wiki.rglob("*.html"))
     print(f"Mirrored HTML files in /wiki: {page_count}")
     if page_count < 1300:
         raise SystemExit(f"Mirror coverage too low: {page_count} pages")

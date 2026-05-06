@@ -147,3 +147,85 @@ def test_swap_search_box_for_pagefind_replaces_native_form():
     js = head.find("script", src=lambda s: s and "/pagefind/pagefind-ui.js" in s)
     assert css is not None
     assert js is not None
+
+
+def test_neutralize_localhost_links_relativizes_wiki_urls():
+    html = '''
+    <a id="cat" href="http://localhost:8080/wiki/Category:Legislation">Cat</a>
+    <a id="art" href="http://localhost:8080/wiki/Foo_Act">Foo</a>
+    '''
+    soup = soup_from(html)
+    postprocess.neutralize_localhost_links(soup)
+    assert soup.find(id="cat")["href"] == "/wiki/Category:Legislation"
+    assert soup.find(id="art")["href"] == "/wiki/Foo_Act"
+
+
+def test_neutralize_localhost_links_strips_dynamic_endpoint_hrefs():
+    html = '''
+    <a id="edit" class="new" href="http://localhost:8080/index.php?title=Foo&amp;action=edit&amp;redlink=1">Foo</a>
+    <a id="api" href="http://localhost:8080/api.php?action=rsd">api</a>
+    <a id="rest" href="http://localhost:8080/rest.php/v1/search">rest</a>
+    <a id="hist" href="http://localhost:8080/index.php?title=Foo&amp;oldid=42">old</a>
+    '''
+    soup = soup_from(html)
+    postprocess.neutralize_localhost_links(soup)
+    for stripped_id in ("edit", "api", "rest", "hist"):
+        a = soup.find(id=stripped_id)
+        assert a is not None, f"{stripped_id} anchor should be preserved"
+        assert "href" not in a.attrs, f"{stripped_id} should have no href"
+        # Visible text preserved
+        assert a.get_text().strip() != ""
+
+
+def test_neutralize_localhost_links_strips_form_action():
+    html = '<form id="f" action="http://localhost:8080/index.php"><input/></form>'
+    soup = soup_from(html)
+    postprocess.neutralize_localhost_links(soup)
+    assert "action" not in soup.find(id="f").attrs
+
+
+def test_neutralize_localhost_links_leaves_external_and_relative_alone():
+    html = '''
+    <a id="ext" href="https://example.com/foo">ext</a>
+    <a id="rel" href="/wiki/Bar">rel</a>
+    '''
+    soup = soup_from(html)
+    postprocess.neutralize_localhost_links(soup)
+    assert soup.find(id="ext")["href"] == "https://example.com/foo"
+    assert soup.find(id="rel")["href"] == "/wiki/Bar"
+
+
+def test_strip_printfooter_removes_retrieved_from_div():
+    html = '''
+    <div id="content">
+      <div class="printfooter" data-nosnippet="">Retrieved from "<a dir="ltr">http://localhost:8080/index.php?title=Foo&amp;oldid=42</a>"</div>
+    </div>
+    '''
+    soup = soup_from(html)
+    postprocess.strip_printfooter(soup)
+    assert soup.find(class_="printfooter") is None
+
+
+def test_neutralize_localhost_links_drops_link_tags_pointing_at_localhost():
+    html = '''
+    <html><head>
+      <link rel="search" type="application/opensearchdescription+xml"
+            href="http://localhost:8080/rest.php/v1/search"/>
+      <link rel="EditURI" type="application/rsd+xml"
+            href="http://localhost:8080/api.php?action=rsd"/>
+      <link rel="alternate" type="application/atom+xml"
+            href="http://localhost:8080/index.php?title=Special:RecentChanges&amp;feed=atom"/>
+      <link rel="stylesheet" href="/pagefind/pagefind-ui.css"/>
+      <link rel="canonical" href="https://archives.mypenjustbroke.com/wiki/Foo"/>
+    </head></html>
+    '''
+    soup = soup_from(html)
+    postprocess.neutralize_localhost_links(soup)
+    head = soup.find("head")
+    # All localhost-bearing link tags removed
+    assert head.find("link", attrs={"rel": "search"}) is None
+    assert head.find("link", attrs={"rel": "EditURI"}) is None
+    assert head.find("link", attrs={"rel": "alternate"}) is None
+    # Non-localhost link tags untouched
+    assert head.find("link", attrs={"rel": "stylesheet"}) is not None
+    assert head.find("link", attrs={"rel": "canonical"}) is not None
