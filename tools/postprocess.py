@@ -12,9 +12,38 @@ def transform(html: str) -> str:
     strip_special_recentchanges_link(soup)
     strip_printfooter(soup)
     neutralize_localhost_links(soup)
+    inject_favicon(soup)
+    inject_logo_override(soup)
     inject_site_notice(soup)
     swap_search_box_for_pagefind(soup)
     return str(soup)
+
+
+LOGO_OVERRIDE_CSS = (
+    ".mw-wiki-logo{"
+    "background-image:url('/assets/logo.jpg') !important;"
+    "background-size:contain !important;"
+    "background-position:center !important;"
+    "background-repeat:no-repeat !important;"
+    "}"
+)
+
+
+def inject_favicon(soup: BeautifulSoup) -> None:
+    head = soup.find("head")
+    if head is None or head.find("link", rel="icon"):
+        return
+    link = soup.new_tag("link", rel="icon", type="image/png", href="/favicon.png")
+    head.append(link)
+
+
+def inject_logo_override(soup: BeautifulSoup) -> None:
+    head = soup.find("head")
+    if head is None or head.find("style", id="archives-logo-override"):
+        return
+    style = soup.new_tag("style", id="archives-logo-override")
+    style.string = LOGO_OVERRIDE_CSS
+    head.append(style)
 
 
 def strip_printfooter(soup: BeautifulSoup) -> None:

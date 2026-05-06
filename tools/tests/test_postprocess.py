@@ -195,6 +195,43 @@ def test_neutralize_localhost_links_leaves_external_and_relative_alone():
     assert soup.find(id="rel")["href"] == "/wiki/Bar"
 
 
+def test_inject_favicon_adds_link_in_head():
+    html = '<html><head><title>X</title></head><body></body></html>'
+    soup = soup_from(html)
+    postprocess.inject_favicon(soup)
+    icon = soup.find("link", rel="icon")
+    assert icon is not None
+    assert icon["href"] == "/favicon.png"
+    assert icon.get("type") == "image/png"
+
+
+def test_inject_favicon_idempotent():
+    html = '<html><head><title>X</title></head></html>'
+    soup = soup_from(html)
+    postprocess.inject_favicon(soup)
+    postprocess.inject_favicon(soup)
+    assert len(soup.find_all("link", rel="icon")) == 1
+
+
+def test_inject_logo_override_adds_css_rule_targeting_mw_wiki_logo():
+    html = '<html><head><title>X</title></head></html>'
+    soup = soup_from(html)
+    postprocess.inject_logo_override(soup)
+    style = soup.find("style", id="archives-logo-override")
+    assert style is not None
+    rendered = str(style)
+    assert ".mw-wiki-logo" in rendered
+    assert "/assets/logo.jpg" in rendered
+
+
+def test_inject_logo_override_idempotent():
+    html = '<html><head></head></html>'
+    soup = soup_from(html)
+    postprocess.inject_logo_override(soup)
+    postprocess.inject_logo_override(soup)
+    assert len(soup.find_all("style", id="archives-logo-override")) == 1
+
+
 def test_strip_printfooter_removes_retrieved_from_div():
     html = '''
     <div id="content">
