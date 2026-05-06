@@ -52,3 +52,9 @@ $wgRightsIcon = "";
 $wgShowExceptionDetails = false;
 $wgShowDBErrorBacktrace = false;
 $wgShowSQLErrors        = false;
+
+# Static-mirror compatibility: category pagination uses query strings
+# (?pagefrom=, ?pageuntil=) which GitHub Pages strips, so "next page"
+# would reload the same file. Render every category on one page instead.
+# Largest current category has ~354 members; 5000 leaves huge headroom.
+$wgCategoryPagingLimit = 5000;
