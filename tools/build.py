@@ -107,6 +107,13 @@ def phase_init() -> None:
         "SimDemocracy Archives", "Admin",
     ])
     wait_for_mediawiki()
+    # install.php seeds Main_Page with a "MediaWiki has been installed" stub.
+    # importDump appends revisions but does not advance page_latest past
+    # newer existing revisions, so without nuking, the install stub keeps
+    # showing as the live Main_Page. Delete it before import so the dump's
+    # revision is the only one and becomes page_latest cleanly.
+    run(["docker", "compose", "exec", "mediawiki",
+         "php", "maintenance/run.php", "nukePage", "Main_Page", "--delete"])
 
 
 def phase_import() -> None:
@@ -165,8 +172,16 @@ def phase_mirror() -> None:
         shutil.rmtree(site)
     site.mkdir()
 
+    # wget exit 8 = "server issued an error response" — non-fatal in mirror mode
+    # (a single 404 on an obscure special page trips it but the rest of the
+    # crawl completes). The page_count check at the bottom is the real gate.
+    def wget_tolerant(cmd: list[str]) -> None:
+        r = run(cmd, check=False)
+        if r.returncode not in (0, 8):
+            raise SystemExit(f"wget failed with exit {r.returncode}")
+
     # Initial recursive mirror from Main_Page; --convert-links makes refs relative.
-    run([
+    wget_tolerant([
         "wget", "--mirror", "--page-requisites", "--convert-links",
         "--adjust-extension", "--no-parent", "--no-host-directories",
         "--execute", "robots=off",
@@ -182,7 +197,7 @@ def phase_mirror() -> None:
     with urls_file.open("w") as f:
         for t in titles:
             f.write(f"{MW_URL}/wiki/{urllib.parse.quote(t.replace(' ', '_'))}\n")
-    run([
+    wget_tolerant([
         "wget", "--input-file", str(urls_file),
         "--page-requisites", "--convert-links",
         "--adjust-extension", "--no-host-directories",

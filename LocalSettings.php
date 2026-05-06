@@ -24,6 +24,9 @@ $wgUpgradeKey = "buildtime-only-not-public-2e8b4f0d3c5a7b9e1d3f5a7c9b1d3e5a";
 
 $wgLanguageCode = "en-GB";
 $wgDefaultSkin = "vector";
+# MW 1.24+ requires explicit skin loading — without this, $wgDefaultSkin
+# resolves to a "skin not available" error and pages render unstyled.
+wfLoadSkin( 'Vector' );
 
 # --- Read-only public mode ---
 # CLI maintenance scripts (importDump, rebuildall) bypass these gates,
